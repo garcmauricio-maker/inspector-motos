@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Inspector Motos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root {
+  --bg: #0a0a0a;
+  --s1: #141414;
+  --s2: #1e1e1e;
+  --s3: #282828;
+  --border: #2e2e2e;
+  --accent: #f5c518;
+  --text: #f0ede8;
+  --text2: #888;
+  --text3: #444;
+  --green: #4caf7d;
+  --red: #e05555;
+  --blue: #4a9eff;
+  --r: 12px;
+  --sb: env(safe-area-inset-bottom, 0px);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; }
+body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100dvh; }
+
+.screen { display: none; flex-direction: column; height: 100%; overflow: hidden; }
+.screen.active { display: flex; }
+
+/* TOPBAR */
+.topbar { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; background: var(--s1); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.topbar h1 { font-size: 17px; font-weight: 700; flex: 1; }
+.topbar .sub { font-size: 12px; color: var(--text2); }
+.icon-btn { width: 34px; height: 34px; background: var(--s2); border: 1px solid var(--border); border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; flex-shrink: 0; user-select: none; }
+.icon-btn:active { background: var(--s3); }
+
+/* STATUS BAR */
+.status-bar { padding: 7px 16px; font-size: 12px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dot.online { background: var(--green); }
+.dot.offline { background: var(--red); }
+.dot.syncing { background: var(--accent); animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* SCROLL CONTENT */
+.content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px 16px; padding-bottom: calc(90px + var(--sb)); }
+
+/* CARDS */
+.card { background: var(--s1); border: 1px solid var(--border); border-radius: var(--r); padding: 13px 15px; margin-bottom: 10px; }
+.card-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+
+/* INPUTS */
+input[type=text], input[type=date] {
+  width: 100%; background: var(--s2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-size: 14px;
+  padding: 9px 12px; font-family: inherit; outline: none;
+  transition: border-color 0.15s;
+}
+input[type=text]:focus, input[type=date]:focus { border-color: var(--accent); }
+input.placa-field { color: var(--accent); font-size: 20px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; font-family: monospace; }
+input.placa-field::placeholder { color: var(--text3); font-size: 14px; letter-spacing: 0; font-weight: 400; }
+
+/* BUTTONS */
+.btn { font-family: inherit; font-size: 14px; font-weight: 600; padding: 12px 16px; border-radius: 10px; border: none; cursor: pointer; transition: all 0.1s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.btn:active { transform: scale(0.97); opacity: 0.9; }
+.btn-primary { background: var(--accent); color: #000; }
+.btn-secondary { background: var(--s2); color: var(--text2); border: 1px solid var(--border); }
+.btn-danger { background: #1e0a0a; color: var(--red); border: 1px solid #3a1010; }
+.btn-drive { background: #0f2a0f; color: var(--green); border: 1px solid #1a4a1a; }
+.btn-blue { background: #0a1a2e; color: var(--blue); border: 1px solid #0a2a4a; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+/* FAB */
+.fab { position: fixed; bottom: calc(22px + var(--sb)); right: 18px; width: 58px; height: 58px; border-radius: 50%; background: var(--accent); color: #000; font-size: 28px; font-weight: 700; display: flex; align-items: center; justify-content: center; cursor: pointer; border: none; box-shadow: 0 4px 20px rgba(245,197,24,0.35); z-index: 50; transition: transform 0.1s; }
+.fab:active { transform: scale(0.93); }
+
+/* MOTO LIST ITEM */
+.moto-item { background: var(--s1); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 13px; margin-bottom: 8px; display: flex; align-items: center; gap: 11px; cursor: pointer; transition: background 0.12s; }
+.moto-item:active { background: var(--s2); }
+.moto-num { width: 34px; height: 34px; border-radius: 7px; background: var(--s2); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--text2); flex-shrink: 0; }
+.moto-num.ok { background: #0e1e0e; color: var(--green); }
+.moto-num.uploading { background: #1a140a; color: var(--accent); }
+.moto-info { flex: 1; min-width: 0; }
+.moto-placa { font-size: 15px; font-weight: 700; letter-spacing: 1px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.moto-placa.vacia { color: var(--text3); font-weight: 400; letter-spacing: 0; font-family: inherit; font-style: italic; }
+.moto-meta { font-size: 12px; color: var(--text2); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+.sync-badge { font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+.sync-badge.done { background: #0e1e0e; color: var(--green); }
+.sync-badge.pending { background: #1a140a; color: var(--accent); }
+.sync-badge.error { background: #1e0a0a; color: var(--red); }
+.foto-strip { display: flex; gap: 4px; margin-top: 7px; overflow-x: auto; padding-bottom: 2px; }
+.foto-strip::-webkit-scrollbar { display: none; }
+.strip-thumb { width: 42px; height: 42px; border-radius: 6px; object-fit: cover; flex-shrink: 0; border: 1.5px solid transparent; }
+.strip-thumb.placa { border-color: var(--accent); }
+
+/* FOTOS GRID */
+.fotos-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+.foto-card { position: relative; border-radius: 8px; overflow: hidden; aspect-ratio: 16/9; background: var(--s2); }
+.foto-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foto-card.is-placa { outline: 2.5px solid var(--accent); outline-offset: -2px; }
+.foto-card .placa-badge { position: absolute; top: 4px; left: 4px; background: var(--accent); color: #000; font-size: 9px; font-weight: 800; padding: 2px 5px; border-radius: 4px; }
+.foto-card .del-btn { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.75); color: #fff; font-size: 13px; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; }
+.foto-card .upload-indicator { position: absolute; bottom: 4px; right: 4px; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+.foto-card .upload-indicator.done { background: rgba(76,175,125,0.9); }
+.foto-card .upload-indicator.pending { background: rgba(245,197,24,0.9); }
+.foto-card .upload-indicator.uploading { background: rgba(74,158,255,0.9); animation: pulse 0.8s infinite; }
+.add-foto-btn { aspect-ratio: 16/9; border-radius: 8px; background: var(--s2); border: 1.5px dashed var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; color: var(--text2); font-size: 12px; }
+.add-foto-btn:active { background: var(--s3); border-color: var(--accent); }
+.add-foto-btn .icon { font-size: 22px; }
+
+/* BOTTOM BAR */
+.bottom-bar { padding: 10px 14px calc(10px + var(--sb)); background: var(--s1); border-top: 1px solid var(--border); display: flex; gap: 7px; flex-shrink: 0; }
+
+/* MODAL */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 200; align-items: flex-end; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--s1); border-radius: 20px 20px 0 0; padding: 20px 18px calc(20px + var(--sb)); width: 100%; max-width: 480px; border-top: 1px solid var(--border); }
+.modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 5px; }
+.modal p { font-size: 13px; color: var(--text2); margin-bottom: 14px; line-height: 1.5; }
+.modal-btns { display: flex; gap: 8px; margin-top: 12px; }
+
+/* PREVIEW */
+.preview-overlay { display: none; position: fixed; inset: 0; background: #000; z-index: 300; flex-direction: column; }
+.preview-overlay.open { display: flex; }
+.preview-img { flex: 1; object-fit: contain; width: 100%; }
+.preview-bar { padding: 10px 14px calc(10px + var(--sb)); background: var(--s1); display: flex; gap: 8px; border-top: 1px solid var(--border); }
+
+/* EMPTY */
+.empty-state { text-align: center; padding: 3rem 1rem; color: var(--text2); }
+.empty-state .icon { font-size: 3rem; margin-bottom: 10px; }
+.empty-state p { font-size: 14px; line-height: 1.6; }
+
+/* LOGIN */
+#login-screen { align-items: center; justify-content: center; padding: 2rem; }
+.login-box { text-align: center; max-width: 340px; }
+.login-box .logo { font-size: 3.5rem; margin-bottom: 16px; }
+.login-box h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+.login-box p { font-size: 14px; color: var(--text2); margin-bottom: 24px; line-height: 1.6; }
+
+/* STAT ROW */
+.stat-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.stat { background: var(--s2); border-radius: 10px; padding: 10px 12px; flex: 1; }
+.stat-l { font-size: 11px; color: var(--text2); margin-bottom: 3px; }
+.stat-v { font-size: 20px; font-weight: 700; font-family: monospace; }
+
+.pbar-wrap { background: var(--s2); border-radius: 99px; height: 6px; overflow: hidden; margin: 8px 0; }
+.pbar { height: 100%; background: var(--accent); border-radius: 99px; width: 0%; transition: width 0.3s; }
+.pbar.green { background: var(--green); }
+.prog-msg { font-size: 12px; color: var(--text3); font-family: monospace; }
+
+.info-box { background: var(--s2); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 10px; border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; }
+.info-box strong { color: var(--accent); }
+
+input[type=file] { display: none; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen" class="screen active">
+  <div class="login-box">
+    <div class="logo">🏍️</div>
+    <h1>Inspector Motos</h1>
+    <p>Toma fotos en campo y organízalas automáticamente en Google Drive por moto y por mes.</p>
+    <button class="btn btn-primary" style="width:100%;font-size:15px;padding:14px;" onclick="iniciarLogin()">
+      Conectar con Google Drive
+    </button>
+    <p style="margin-top:14px;font-size:12px;color:var(--text3);">Las fotos se suben directo a tu Drive cuando hay internet. Sin internet, se guardan y suben después.</p>
+  </div>
+</div>
+
+<!-- HOME -->
+<div id="home" class="screen">
+  <div class="topbar">
+    <h1>Inspector Motos</h1>
+    <span class="sub" id="home-count">0 motos</span>
+    <div class="icon-btn" onclick="irExportar()" title="Exportar">📦</div>
+    <div class="icon-btn" onclick="sincronizarPendientes()" title="Sincronizar" id="sync-btn">☁️</div>
+  </div>
+  <div class="status-bar" id="status-bar">
+    <div class="dot offline" id="status-dot"></div>
+    <span id="status-text">Verificando conexión...</span>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:12px;">
+      <div class="card-label">Lote / Carpeta en Drive</div>
+      <input type="text" id="lote-nombre" placeholder="Ej: Abril 2026">
+    </div>
+    <div id="motos-lista"></div>
+    <div id="empty-state" class="empty-state">
+      <div class="icon">🏍️</div>
+      <p>Toca <strong style="color:var(--accent)">+</strong> para registrar<br>la primera moto del lote</p>
+    </div>
+  </div>
+  <button class="fab" onclick="nuevaMoto()">+</button>
+</div>
+
+<!-- MOTO SCREEN -->
+<div id="moto-screen" class="screen">
+  <div class="topbar">
+    <div class="icon-btn" onclick="volverHome()">‹</div>
+    <h1 id="moto-titulo">Moto #1</h1>
+    <div class="icon-btn btn-danger" onclick="eliminarMotoActual()" style="color:var(--red);">🗑</div>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:12px;">
+      <div class="card-label">Número de placa</div>
+      <input type="text" class="placa-field" id="placa-input" placeholder="Ej: ABC 123" maxlength="10"
+        oninput="this.value=this.value.toUpperCase();actualizarPlaca()">
+    </div>
+    <div class="info-box">
+      La <strong>primera foto</strong> se marca como placa automáticamente. Toca cualquier foto para cambiarla o eliminarla.
+    </div>
+    <div class="fotos-grid" id="fotos-grid"></div>
+    <div id="upload-status-moto" style="display:none;" class="card">
+      <div class="pbar-wrap"><div class="pbar green" id="upload-pbar"></div></div>
+      <div class="prog-msg" id="upload-msg"></div>
+    </div>
+  </div>
+  <div class="bottom-bar">
+    <button class="btn btn-secondary" style="flex:1" onclick="abrirCamara()">📷 Cámara</button>
+    <button class="btn btn-secondary" style="flex:1" onclick="abrirGaleria()">🖼️ Galería</button>
+    <button class="btn btn-primary" style="flex:1" onclick="guardarMoto()">Guardar ✓</button>
+  </div>
+</div>
+
+<!-- EXPORT SCREEN -->
+<div id="export-screen" class="screen">
+  <div class="topbar">
+    <div class="icon-btn" onclick="show('home')">‹</div>
+    <h1>Exportar</h1>
+  </div>
+  <div class="content">
+    <div class="stat-row">
+      <div class="stat"><div class="stat-l">Motos</div><div class="stat-v" id="exp-motos">0</div></div>
+      <div class="stat"><div class="stat-l">Fotos</div><div class="stat-v" id="exp-fotos">0</div></div>
+      <div class="stat"><div class="stat-l">Pendientes</div><div class="stat-v" id="exp-pending" style="color:var(--accent)">0</div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+      <button class="btn btn-drive" onclick="subirTodoDrive()">☁️ Subir todo a Google Drive</button>
+      <button class="btn btn-secondary" onclick="exportarZip()">📦 Descargar ZIP</button>
+    </div>
+    <div id="exp-list"></div>
+    <div id="exp-progress" style="display:none;" class="card">
+      <div class="card-label" id="exp-prog-label">Procesando...</div>
+      <div class="pbar-wrap"><div class="pbar" id="exp-pbar"></div></div>
+      <div class="prog-msg" id="exp-msg"></div>
+    </div>
+    <div id="exp-done" style="display:none;" class="card" style="text-align:center;">
+      <div style="font-size:2rem;margin-bottom:8px;">✅</div>
+      <div style="font-weight:700;color:var(--green);font-size:15px;" id="exp-done-msg"></div>
+    </div>
+  </div>
+  <div class="bottom-bar">
+    <button class="btn btn-secondary" style="flex:1" onclick="show('home')">Volver</button>
+  </div>
+</div>
+
+<!-- MODAL NUEVA MOTO -->
+<div class="modal-overlay" id="modal-nueva">
+  <div class="modal">
+    <h3>Nueva moto</h3>
+    <p>Escribe la placa ahora o después</p>
+    <input type="text" class="placa-field" id="modal-placa" placeholder="Ej: ABC 123" maxlength="10"
+      oninput="this.value=this.value.toUpperCase()"
+      onkeydown="if(event.key==='Enter')confirmarNuevaMoto()">
+    <div class="modal-btns">
+      <button class="btn btn-secondary" style="flex:1" onclick="cerrarModal('modal-nueva')">Cancelar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="confirmarNuevaMoto()">Crear →</button>
+    </div>
+  </div>
+</div>
+
+<!-- PREVIEW -->
+<div class="preview-overlay" id="foto-preview">
+  <img class="preview-img" id="preview-img" src="" alt="">
+  <div class="preview-bar">
+    <button class="btn btn-secondary" style="flex:1" onclick="cerrarPreview()">Cerrar</button>
+    <button class="btn btn-primary" style="flex:1" id="preview-placa-btn" onclick="marcarPlacaDesdePreview()">Marcar como placa</button>
+    <button class="btn btn-danger" onclick="eliminarDesdePreview()">🗑️</button>
+  </div>
+</div>
+
+<input type="file" id="camera-input" accept="image/*" capture="environment">
+<input type="file" id="gallery-input" accept="image/*" multiple>
+
+<script>
+// ═══════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════
+const CLIENT_ID = '958692691751-msdb0efgq8vagq3o686rjo42rjtmqp1b.apps.googleusercontent.com';
+const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let motos = [];
+let motoActualIdx = -1;
+let previewFotoIdx = -1;
+let accessToken = null;
+let isOnline = navigator.onLine;
+let driveFolderCache = {};
+
+// ═══════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function getLote() {
+  const v = document.getElementById('lote-nombre').value.trim();
+  if (v) return v;
+  const n = new Date();
+  return `${MESES[n.getMonth()]} ${n.getFullYear()}`;
+}
+
+function getFecha(file) {
+  const m = file.name.match(/(\d{4})(\d{2})(\d{2})/);
+  if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+  return new Date(file.lastModified || Date.now());
+}
+
+// ═══════════════════════════════════════════
+// ONLINE STATUS
+// ═══════════════════════════════════════════
+function updateOnlineStatus() {
+  isOnline = navigator.onLine;
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  if (!dot) return;
+  if (isOnline && accessToken) {
+    dot.className = 'dot online';
+    txt.textContent = 'Conectado a Google Drive';
+  } else if (isOnline && !accessToken) {
+    dot.className = 'dot offline';
+    txt.textContent = 'Internet disponible — sin sesión Drive';
+  } else {
+    dot.className = 'dot offline';
+    txt.textContent = 'Sin internet — fotos se guardan localmente';
+  }
+}
+
+window.addEventListener('online', () => { isOnline = true; updateOnlineStatus(); sincronizarPendientes(); });
+window.addEventListener('offline', () => { isOnline = false; updateOnlineStatus(); });
+
+// ═══════════════════════════════════════════
+// GOOGLE AUTH
+// ═══════════════════════════════════════════
+function iniciarLogin() {
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    redirect_uri: window.location.href.split('?')[0],
+    response_type: 'token',
+    scope: SCOPES,
+    prompt: 'select_account'
+  });
+  window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+}
+
+function checkAuthCallback() {
+  const hash = window.location.hash;
+  if (hash.includes('access_token')) {
+    const params = new URLSearchParams(hash.substring(1));
+    accessToken = params.get('access_token');
+    window.history.replaceState(null, '', window.location.pathname);
+    entrarApp();
+  } else if (localStorage.getItem('im_motos')) {
+    const token = sessionStorage.getItem('im_token');
+    if (token) { accessToken = token; }
+    entrarApp();
+  }
+}
+
+function entrarApp() {
+  if (accessToken) sessionStorage.setItem('im_token', accessToken);
+  const guardadas = localStorage.getItem('im_motos');
+  if (guardadas) {
+    try {
+      const data = JSON.parse(guardadas);
+      motos = data.map(m => ({
+        ...m,
+        fecha: new Date(m.fecha),
+        fotos: m.fotos.map(f => ({ ...f, blob: null, url: f.dataUrl || '' }))
+      }));
+    } catch(e) { motos = []; }
+  }
+  const loteGuardado = localStorage.getItem('im_lote');
+  if (loteGuardado) document.getElementById('lote-nombre').value = loteGuardado;
+  else {
+    const n = new Date();
+    document.getElementById('lote-nombre').value = `${MESES[n.getMonth()]} ${n.getFullYear()}`;
+  }
+  document.getElementById('lote-nombre').addEventListener('input', () => {
+    localStorage.setItem('im_lote', document.getElementById('lote-nombre').value);
+  });
+  updateOnlineStatus();
+  renderHome();
+  show('home');
+}
+
+// ═══════════════════════════════════════════
+// PERSISTENCIA LOCAL
+// ═══════════════════════════════════════════
+function guardarLocal() {
+  try {
+    const data = motos.map(m => ({
+      ...m,
+      fecha: m.fecha.toISOString(),
+      fotos: m.fotos.map(f => ({ esPlaca: f.esPlaca, dataUrl: f.url, driveFileId: f.driveFileId || null, uploaded: f.uploaded || false, nombre: f.nombre || '' }))
+    }));
+    localStorage.setItem('im_motos', JSON.stringify(data));
+  } catch(e) { console.warn('No se pudo guardar localmente:', e); }
+}
+
+// ═══════════════════════════════════════════
+// HOME
+// ═══════════════════════════════════════════
+function renderHome() {
+  const lista = document.getElementById('motos-lista');
+  const empty = document.getElementById('empty-state');
+  document.getElementById('home-count').textContent = `${motos.length} moto${motos.length!==1?'s':''}`;
+  lista.innerHTML = '';
+
+  if (motos.length === 0) { empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  const pendientes = motos.reduce((s,m) => s + m.fotos.filter(f => !f.uploaded).length, 0);
+  const syncBtn = document.getElementById('sync-btn');
+  if (syncBtn) syncBtn.style.color = pendientes > 0 ? 'var(--accent)' : 'var(--text2)';
+
+  motos.forEach((m, i) => {
+    const allUploaded = m.fotos.length > 0 && m.fotos.every(f => f.uploaded);
+    const somePending = m.fotos.some(f => !f.uploaded);
+    const div = document.createElement('div');
+    div.className = 'moto-item';
+    div.onclick = () => abrirMoto(i);
+
+    const num = document.createElement('div');
+    num.className = 'moto-num' + (allUploaded ? ' ok' : somePending ? ' uploading' : '');
+    num.textContent = i + 1;
+
+    const info = document.createElement('div');
+    info.className = 'moto-info';
+
+    const placa = document.createElement('div');
+    placa.className = 'moto-placa' + (!m.placa ? ' vacia' : '');
+    placa.textContent = m.placa || 'Sin placa';
+
+    const meta = document.createElement('div');
+    meta.className = 'moto-meta';
+    meta.textContent = `${m.fotos.length} foto${m.fotos.length!==1?'s':''} · ${MESES[m.fecha.getMonth()]} ${m.fecha.getFullYear()}`;
+
+    const badge = document.createElement('span');
+    badge.className = 'sync-badge ' + (allUploaded ? 'done' : somePending && m.fotos.length > 0 ? 'pending' : '');
+    badge.textContent = allUploaded ? '✓ Drive' : m.fotos.some(f=>!f.uploaded) && m.fotos.length > 0 ? '⏳ pendiente' : '';
+    if (badge.textContent) meta.appendChild(badge);
+
+    info.appendChild(placa);
+    info.appendChild(meta);
+
+    if (m.fotos.length > 0) {
+      const strip = document.createElement('div');
+      strip.className = 'foto-strip';
+      m.fotos.slice(0,8).forEach(f => {
+        const img = document.createElement('img');
+        img.className = 'strip-thumb' + (f.esPlaca ? ' placa' : '');
+        img.src = f.url;
+        strip.appendChild(img);
+      });
+      info.appendChild(strip);
+    }
+
+    const arrow = document.createElement('div');
+    arrow.style.cssText = 'font-size:18px;color:var(--text3);';
+    arrow.textContent = '›';
+
+    div.appendChild(num); div.appendChild(info); div.appendChild(arrow);
+    lista.appendChild(div);
+  });
+}
+
+// ═══════════════════════════════════════════
+// NUEVA / ABRIR MOTO
+// ═══════════════════════════════════════════
+function nuevaMoto() {
+  document.getElementById('modal-placa').value = '';
+  document.getElementById('modal-nueva').classList.add('open');
+  setTimeout(() => document.getElementById('modal-placa').focus(), 150);
+}
+
+function cerrarModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function confirmarNuevaMoto() {
+  const placa = document.getElementById('modal-placa').value.trim().toUpperCase();
+  cerrarModal('modal-nueva');
+  motos.push({ id: Date.now(), placa, fotos: [], fecha: new Date(), driveFolder: null });
+  motoActualIdx = motos.length - 1;
+  guardarLocal();
+  abrirMoto(motoActualIdx);
+}
+
+function abrirMoto(idx) {
+  motoActualIdx = idx;
+  const m = motos[idx];
+  document.getElementById('moto-titulo').textContent = `Moto #${idx+1}`;
+  document.getElementById('placa-input').value = m.placa || '';
+  document.getElementById('upload-status-moto').style.display = 'none';
+  renderFotos();
+  show('moto-screen');
+}
+
+function actualizarPlaca() {
+  if (motoActualIdx < 0) return;
+  motos[motoActualIdx].placa = document.getElementById('placa-input').value.trim().toUpperCase();
+  guardarLocal();
+}
+
+function volverHome() { renderHome(); show('home'); }
+
+function eliminarMotoActual() {
+  if (!confirm(`¿Eliminar Moto #${motoActualIdx+1}?`)) return;
+  motos.splice(motoActualIdx, 1);
+  motoActualIdx = -1;
+  guardarLocal();
+  renderHome();
+  show('home');
+}
+
+function guardarMoto() {
+  actualizarPlaca();
+  guardarLocal();
+  if (isOnline && accessToken) subirFotosPendientesMoto(motoActualIdx);
+  renderHome();
+  show('home');
+}
+
+// ═══════════════════════════════════════════
+// FOTOS
+// ═══════════════════════════════════════════
+function renderFotos() {
+  const m = motos[motoActualIdx];
+  const grid = document.getElementById('fotos-grid');
+  grid.innerHTML = '';
+
+  m.fotos.forEach((f, i) => {
+    const card = document.createElement('div');
+    card.className = 'foto-card' + (f.esPlaca ? ' is-placa' : '');
+    card.onclick = () => abrirPreview(i);
+
+    const img = document.createElement('img');
+    img.src = f.url;
+
+    if (f.esPlaca) {
+      const b = document.createElement('div');
+      b.className = 'placa-badge'; b.textContent = 'PLACA';
+      card.appendChild(b);
+    }
+
+    const del = document.createElement('button');
+    del.className = 'del-btn'; del.textContent = '×';
+    del.onclick = e => { e.stopPropagation(); eliminarFoto(i); };
+
+    const ind = document.createElement('div');
+    ind.className = 'upload-indicator ' + (f.uploaded ? 'done' : 'pending');
+    ind.textContent = f.uploaded ? '✓' : '⏳';
+
+    card.appendChild(img); card.appendChild(del); card.appendChild(ind);
+    grid.appendChild(card);
+  });
+
+  const add = document.createElement('div');
+  add.className = 'add-foto-btn';
+  add.innerHTML = '<div class="icon">📷</div><span>Foto</span>';
+  add.onclick = abrirCamara;
+  grid.appendChild(add);
+}
+
+function marcarComoPlaca(idx) {
+  motos[motoActualIdx].fotos.forEach((f,i) => f.esPlaca = i===idx);
+  guardarLocal();
+  renderFotos();
+}
+
+function eliminarFoto(idx) {
+  const m = motos[motoActualIdx];
+  m.fotos.splice(idx, 1);
+  if (m.fotos.length > 0 && !m.fotos.some(f=>f.esPlaca)) m.fotos[0].esPlaca = true;
+  guardarLocal();
+  renderFotos();
+}
+
+async function agregarFotos(files) {
+  if (motoActualIdx < 0) return;
+  const m = motos[motoActualIdx];
+  for (const file of [...files]) {
+    const dataUrl = await fileToDataUrl(file);
+    const esPlaca = m.fotos.length === 0;
+    const nombre = `${m.placa||'moto'}_${String(m.fotos.length+1).padStart(2,'0')}.jpg`;
+    m.fotos.push({ blob: file, url: dataUrl, dataUrl, esPlaca, uploaded: false, nombre, driveFileId: null });
+  }
+  guardarLocal();
+  renderFotos();
+  if (isOnline && accessToken) subirFotosPendientesMoto(motoActualIdx);
+}
+
+function fileToDataUrl(file) {
+  return new Promise(res => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.readAsDataURL(file);
+  });
+}
+
+// ═══════════════════════════════════════════
+// CÁMARA
+// ═══════════════════════════════════════════
+const camInput = document.getElementById('camera-input');
+const galInput = document.getElementById('gallery-input');
+camInput.addEventListener('change', () => { if (camInput.files.length) agregarFotos(camInput.files); });
+galInput.addEventListener('change', () => { if (galInput.files.length) agregarFotos(galInput.files); });
+
+function abrirCamara() { camInput.value=''; camInput.click(); }
+function abrirGaleria() { galInput.value=''; galInput.click(); }
+
+// ═══════════════════════════════════════════
+// PREVIEW
+// ═══════════════════════════════════════════
+function abrirPreview(idx) {
+  previewFotoIdx = idx;
+  const f = motos[motoActualIdx].fotos[idx];
+  document.getElementById('preview-img').src = f.url;
+  const btn = document.getElementById('preview-placa-btn');
+  btn.textContent = f.esPlaca ? '✓ Es la placa' : 'Marcar como placa';
+  btn.style.background = f.esPlaca ? '#0e1e0e' : 'var(--accent)';
+  btn.style.color = f.esPlaca ? 'var(--green)' : '#000';
+  document.getElementById('foto-preview').classList.add('open');
+}
+
+function cerrarPreview() { document.getElementById('foto-preview').classList.remove('open'); previewFotoIdx=-1; }
+function marcarPlacaDesdePreview() { if(previewFotoIdx<0)return; marcarComoPlaca(previewFotoIdx); cerrarPreview(); }
+function eliminarDesdePreview() { if(previewFotoIdx<0)return; eliminarFoto(previewFotoIdx); cerrarPreview(); }
+
+// ═══════════════════════════════════════════
+// GOOGLE DRIVE API
+// ═══════════════════════════════════════════
+async function crearCarpetaDrive(nombre, parentId = null) {
+  const key = parentId ? `${parentId}/${nombre}` : nombre;
+  if (driveFolderCache[key]) return driveFolderCache[key];
+
+  const meta = { name: nombre, mimeType: 'application/vnd.google-apps.folder' };
+  if (parentId) meta.parents = [parentId];
+
+  const r = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(meta)
+  });
+  const data = await r.json();
+  driveFolderCache[key] = data.id;
+  return data.id;
+}
+
+async function subirArchivoDrive(blob, nombre, folderId) {
+  const compressed = await redimensionar(blob);
+  const meta = JSON.stringify({ name: nombre, parents: [folderId] });
+  const form = new FormData();
+  form.append('metadata', new Blob([meta], { type: 'application/json' }));
+  form.append('file', compressed, nombre);
+
+  const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+    body: form
+  });
+  const data = await r.json();
+  return data.id;
+}
+
+async function subirFotosPendientesMoto(idx) {
+  if (!accessToken || !isOnline) return;
+  const m = motos[idx];
+  const pendientes = m.fotos.filter(f => !f.uploaded && (f.blob || f.dataUrl));
+  if (pendientes.length === 0) return;
+
+  const statusEl = document.getElementById('upload-status-moto');
+  const pbar = document.getElementById('upload-pbar');
+  const msg = document.getElementById('upload-msg');
+
+  if (statusEl && motoActualIdx === idx) {
+    statusEl.style.display = 'block';
+  }
+
+  try {
+    const lote = getLote();
+    const loteId = await crearCarpetaDrive(lote);
+    const placaNombre = m.placa || `moto_${m.id}`;
+    const motoId = await crearCarpetaDrive(placaNombre, loteId);
+
+    let done = 0;
+    for (const f of m.fotos) {
+      if (f.uploaded) { done++; continue; }
+      const blob = f.blob || dataUrlToBlob(f.dataUrl);
+      if (!blob) { done++; continue; }
+      if (msg) msg.textContent = `Subiendo ${f.nombre || `foto ${done+1}`}...`;
+      try {
+        const fileId = await subirArchivoDrive(blob, f.nombre || `${placaNombre}_${String(done+1).padStart(2,'0')}.jpg`, motoId);
+        f.driveFileId = fileId;
+        f.uploaded = true;
+      } catch(e) { console.warn('Error subiendo foto:', e); }
+      done++;
+      if (pbar) pbar.style.width = Math.round(done/m.fotos.length*100)+'%';
+    }
+    guardarLocal();
+    renderFotos();
+  } catch(e) {
+    console.warn('Error subiendo a Drive:', e);
+  } finally {
+    if (statusEl && motoActualIdx === idx) statusEl.style.display = 'none';
+  }
+}
+
+function dataUrlToBlob(dataUrl) {
+  try {
+    const [header, data] = dataUrl.split(',');
+    const mime = header.match(/:(.*?);/)[1];
+    const binary = atob(data);
+    const arr = new Uint8Array(binary.length);
+    for (let i=0;i<binary.length;i++) arr[i]=binary.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  } catch(e) { return null; }
+}
+
+async function sincronizarPendientes() {
+  if (!accessToken || !isOnline) return;
+  const dot = document.getElementById('status-dot');
+  if (dot) { dot.className = 'dot syncing'; }
+  document.getElementById('status-text').textContent = 'Sincronizando...';
+  for (let i=0;i<motos.length;i++) {
+    await subirFotosPendientesMoto(i);
+  }
+  updateOnlineStatus();
+  renderHome();
+}
+
+// ═══════════════════════════════════════════
+// REDIMENSIONAR
+// ═══════════════════════════════════════════
+function redimensionar(input) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    const url = input instanceof Blob ? URL.createObjectURL(input) : input;
+    img.onload = () => {
+      const W=854, H=480;
+      const c=document.createElement('canvas');
+      c.width=W; c.height=H;
+      const ctx=c.getContext('2d');
+      const rS=img.width/img.height, rD=W/H;
+      let sx=0,sy=0,sw=img.width,sh=img.height;
+      if(rS>rD){sw=Math.round(img.height*rD);sx=Math.round((img.width-sw)/2);}
+      else{sh=Math.round(img.width/rD);sy=Math.round((img.height-sh)/2);}
+      ctx.drawImage(img,sx,sy,sw,sh,0,0,W,H);
+      if(input instanceof Blob) URL.revokeObjectURL(url);
+      c.toBlob(b=>b?res(b):rej(),'image/jpeg',0.85);
+    };
+    img.onerror=()=>rej();
+    img.src=url;
+  });
+}
+
+// ═══════════════════════════════════════════
+// EXPORTAR ZIP
+// ═══════════════════════════════════════════
+function irExportar() {
+  const total = motos.reduce((s,m)=>s+m.fotos.length,0);
+  const pend = motos.reduce((s,m)=>s+m.fotos.filter(f=>!f.uploaded).length,0);
+  document.getElementById('exp-motos').textContent = motos.length;
+  document.getElementById('exp-fotos').textContent = total;
+  document.getElementById('exp-pending').textContent = pend;
+
+  const list = document.getElementById('exp-list');
+  list.innerHTML = '';
+  motos.forEach((m,i) => {
+    const pct = m.fotos.length>0 ? Math.round(m.fotos.filter(f=>f.uploaded).length/m.fotos.length*100) : 0;
+    const d = document.createElement('div');
+    d.className = 'card';
+    d.style.marginBottom = '6px';
+    d.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:13px;color:var(--text2);">#${i+1}</span>
+        <span style="font-size:15px;font-weight:700;font-family:monospace;flex:1;">${m.placa||'(sin placa)'}</span>
+        <span style="font-size:12px;color:var(--text2);">${m.fotos.length} fotos</span>
+        <span style="font-size:11px;color:${pct===100?'var(--green)':'var(--accent)'};">${pct}% Drive</span>
+      </div>
+      <div class="pbar-wrap"><div class="pbar green" style="width:${pct}%"></div></div>
+    `;
+    list.appendChild(d);
+  });
+
+  document.getElementById('exp-progress').style.display = 'none';
+  document.getElementById('exp-done').style.display = 'none';
+  show('export-screen');
+}
+
+async function subirTodoDrive() {
+  if (!accessToken) { alert('Necesitas conectarte con Google Drive primero'); return; }
+  if (!isOnline) { alert('Sin conexión a internet'); return; }
+  document.getElementById('exp-progress').style.display = 'block';
+  document.getElementById('exp-done').style.display = 'none';
+  const pbar = document.getElementById('exp-pbar');
+  const msg = document.getElementById('exp-msg');
+  const total = motos.reduce((s,m)=>s+m.fotos.length,0);
+  let done=0;
+  for(let i=0;i<motos.length;i++){
+    const m=motos[i];
+    document.getElementById('exp-prog-label').textContent = `Subiendo ${m.placa||'moto '+(i+1)}...`;
+    await subirFotosPendientesMoto(i);
+    done+=m.fotos.length;
+    pbar.style.width=Math.round(done/total*100)+'%';
+    msg.textContent=`${m.placa||'Moto '+(i+1)} completada`;
+  }
+  document.getElementById('exp-progress').style.display='none';
+  document.getElementById('exp-done').style.display='block';
+  document.getElementById('exp-done-msg').textContent=`✓ ${motos.length} motos subidas a Google Drive`;
+  irExportar();
+}
+
+async function exportarZip() {
+  if (motos.length===0){alert('No hay motos');return;}
+  document.getElementById('exp-progress').style.display='block';
+  document.getElementById('exp-done').style.display='none';
+  document.getElementById('exp-prog-label').textContent='Generando ZIP...';
+  const zip=new JSZip();
+  const lote=getLote();
+  let done=0;
+  const total=motos.reduce((s,m)=>s+m.fotos.length,0);
+  const pbar=document.getElementById('exp-pbar');
+  const msg=document.getElementById('exp-msg');
+  for(const m of motos){
+    const nombre=m.placa||`sin_placa_${m.id}`;
+    const folder=zip.folder(`${lote}/${nombre}`);
+    for(let j=0;j<m.fotos.length;j++){
+      const f=m.fotos[j];
+      msg.textContent=`${nombre} — ${j+1}/${m.fotos.length}`;
+      try{
+        const blob=dataUrlToBlob(f.dataUrl||f.url);
+        if(blob){
+          const comp=await redimensionar(blob);
+          folder.file(`${nombre}_${String(j+1).padStart(2,'0')}.jpg`,comp);
+        }
+      }catch(e){console.error(e);}
+      done++;
+      pbar.style.width=Math.round(done/total*100)+'%';
+    }
+  }
+  msg.textContent='Comprimiendo...';
+  const content=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:5}});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(content);
+  a.download=`${lote.replace(/\s+/g,'_')}_motos.zip`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  document.getElementById('exp-progress').style.display='none';
+  document.getElementById('exp-done').style.display='block';
+  document.getElementById('exp-done-msg').textContent=`✓ ZIP descargado — ${motos.length} motos · ${total} fotos`;
+}
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+checkAuthCallback();
+updateOnlineStatus();
+</script>
+</body>
+</html>
